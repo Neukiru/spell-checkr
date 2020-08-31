@@ -1,4 +1,5 @@
 import re
+import io
 import os
 import unidecode
 import numpy as np
@@ -13,7 +14,7 @@ np.random.seed(1234)
 SOS = '\t' # start of sequence.
 EOS = '*' # end of sequence.
 CHARS = list('აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწჭხჯჰ ')
-REMOVE_CHARS = '[^აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწჭხჯჰ\s]'
+whitelist = set('აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწხჰ ')
 
 
 class CharacterTable(object):
@@ -78,13 +79,13 @@ def read_text(data_path, list_of_books):
     text = ''
     for book in list_of_books:
         file_path = os.path.join(data_path, book)
-        strings = unidecode.unidecode(open(file_path).read())
+        strings = io.open(file_path,mode="r", encoding="utf-8").read()
         text += strings + ' '
     return text
 
 
 def tokenize(text):
-    tokens = [re.sub(REMOVE_CHARS, '', token)
+    tokens = [''.join(filter(whitelist.__contains__, token))
               for token in re.split("[-\n ]", text)]
     return tokens
 
