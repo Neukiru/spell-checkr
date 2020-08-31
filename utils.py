@@ -12,8 +12,8 @@ np.random.seed(1234)
 
 SOS = '\t' # start of sequence.
 EOS = '*' # end of sequence.
-CHARS = list('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ ')
-REMOVE_CHARS = '[#$%"\+@<=>!&,-.?:;()*\[\]^_`{|}~/\d\t\n\r\x0b\x0c]'
+CHARS = list('აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწჭხჯჰ ')
+REMOVE_CHARS = '[^აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწჭხჯჰ\s]'
 
 
 class CharacterTable(object):
