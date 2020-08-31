@@ -4,7 +4,7 @@ import unidecode
 import numpy as np
 
 from keras.models import Model, load_model
-from keras.layers import Input, dot, concatenate, Activation
+from keras.layers import Input
 
 from model import truncated_acc, truncated_loss
 
@@ -88,26 +88,52 @@ def tokenize(text):
               for token in re.split("[-\n ]", text)]
     return tokens
 
-def add_segmentation(tokens,error_rate):
+def add_segmentation(tokens,error_rate,n_gramms = 2):
     np.random.seed(1234)
     corrected_tokens = []
     corrupted_tokens = []
     for index, obj in enumerate(tokens):
         rand = np.random.rand()
         if rand <= error_rate:
-            if  index < len(tokens) - 1 :
-                corrected_tokens.append(tokens[index]+ ' ' + tokens[index + 1])
-                corrupted_tokens.append(tokens[index] + tokens[index + 1])                        
+            if  index < len(tokens) - (n_gramms - 1) :
+                corrected_tokens.append(" ".join(tokens[index:index + n_gramms]))
+                corrupted_tokens.append("".join(tokens[index:index + n_gramms]))                        
             else:
                 pass       
         else:
-            if index < len(tokens) - 1 :
-              corrected_tokens.append(tokens[index]+ ' ' + tokens[index + 1])
-              corrupted_tokens.append(tokens[index]+ ' ' + tokens[index + 1])
+            if index < len(tokens) - (n_gramms - 1) :
+              corrected_tokens.append(" ".join(tokens[index:index + n_gramms]))
+              corrupted_tokens.append(" ".join(tokens[index:index + n_gramms]))
             else:
               pass        
                    
             
+    return corrected_tokens, corrupted_tokens
+
+def add_segmentation_errors(tokens,error_rate, n_gramms = 2):
+    prohibited = False
+    np.random.seed(1234)
+    corrected_tokens = []
+    corrupted_tokens = []
+    for index, obj in enumerate(tokens):
+        rand = np.random.rand()
+        if rand <= error_rate and not prohibited:
+            if  index < len(tokens) - (n_gramms - 1) :
+                corrected_tokens.append(" ".join(tokens[index:index + n_gramms]))
+                corrupted_tokens.append("".join(tokens[index:index + n_gramms]))
+                prohibited = not prohibited                        
+            else:
+                corrected_tokens.append(tokens[index])
+                corrupted_tokens.append(tokens[index])       
+        else:
+            if not prohibited :
+               if index < len(tokens) - (n_gramms - 1) :
+                   corrected_tokens.append(" ".join(tokens[index:index + n_gramms]))
+                   corrupted_tokens.append(" ".join(tokens[index:index + n_gramms]))
+               else:
+                   corrected_tokens.append(tokens[index])
+                   corrupted_tokens.append(tokens[index]) 
+            prohibited = not prohibited                            
     return corrected_tokens, corrupted_tokens
     
 def add_speling_erors(token, error_rate):
@@ -158,7 +184,7 @@ def transform(tokens,corrupted_tokens, maxlen, error_rate=0.3, shuffle=True):
     decoder_tokens = []
     target_tokens = []
     for corrupted_token,token in zip(corrupted_tokens,tokens):
-        encoder = corrupted_token#add_speling_erors(corrupted_token, error_rate=error_rate)
+        encoder = add_speling_erors(corrupted_token, error_rate=error_rate)
         encoder += EOS * (maxlen - len(encoder)) # Padded to maxlen.
         encoder_tokens.append(encoder)
         decoder = SOS + token

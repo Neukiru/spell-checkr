@@ -36,7 +36,7 @@ if __name__ == '__main__':
     # Prepare training data.
     text  = read_text(data_path, train_books)
     vocab = tokenize(text)
-    vocab = list(filter(None, vocab))
+    vocab = list(set(filter(None, vocab)))
     vocab,corr_vocab = utils.add_segmentation(vocab,0.15)
   
     
@@ -63,7 +63,7 @@ if __name__ == '__main__':
     # Prepare validation data.
     text = read_text(data_path, val_books)
     val_tokens = tokenize(text)
-    val_tokens = list(filter(None, val_tokens))
+    val_tokens = list(set(filter(None, val_tokens)))
     val_tokens,corr_val_tokens = utils.add_segmentation(val_tokens,0.3)
 
     val_maxlen = max([len(token) for token in val_tokens]) + 2
