@@ -20,7 +20,8 @@ if __name__ == '__main__':
     text  = read_text(data_path, books)
     vocab = tokenize(text)
     vocab = list(filter(None, vocab))
-    vocab,corr_vocab = utils.add_segmentation(vocab,0.15)
+    vocab,corr_vocab = utils.add_segmentation(vocab,0.15,3)
+    vocab,corr_vocab = set(vocab),set(corr_vocab)
 
    
     # `maxlen` is the length of the longest word in the vocabulary
@@ -31,7 +32,7 @@ if __name__ == '__main__':
 
     tokens = tokenize(test_sentence)
     tokens = list(filter(None, tokens))
-    tokens,corr_tokens = utils.add_segmentation_errors(tokens,0.2)
+    tokens,corr_tokens = utils.add_segmentation_errors(tokens,0.2,3)
 
     
     misspelled_tokens, _, target_tokens = transform(

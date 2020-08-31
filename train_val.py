@@ -26,7 +26,7 @@ sample_mode = 'argmax'
 # https://arxiv.org/abs/1409.3215
 reverse = True
 
-data_path = './deep-spell-checkr/data'
+data_path = './spell-checkr/data'
 train_books = ['nietzsche.txt', 'pride_and_prejudice.txt',
                'shakespeare.txt', 'war_and_peace.txt']
 val_books = ['wonderland.txt']
@@ -36,9 +36,9 @@ if __name__ == '__main__':
     # Prepare training data.
     text  = read_text(data_path, train_books)
     vocab = tokenize(text)
-    vocab = list(set(filter(None, vocab)))
-    vocab,corr_vocab = utils.add_segmentation(vocab,0.15)
-  
+    vocab = list(filter(None, vocab))
+    vocab,corr_vocab = utils.add_segmentation(vocab,0.15,3)
+    vocab,corr_vocab = set(vocab),set(corr_vocab)
     
     
     # `maxlen` is the length of the longest word in the vocabulary
@@ -63,8 +63,8 @@ if __name__ == '__main__':
     # Prepare validation data.
     text = read_text(data_path, val_books)
     val_tokens = tokenize(text)
-    val_tokens = list(set(filter(None, val_tokens)))
-    val_tokens,corr_val_tokens = utils.add_segmentation(val_tokens,0.3)
+    val_tokens = list(filter(None, val_tokens))
+    val_tokens,corr_val_tokens = utils.add_segmentation(val_tokens,0.3,3)
 
     val_maxlen = max([len(token) for token in val_tokens]) + 2
     val_encoder, val_decoder, val_target = transform(
