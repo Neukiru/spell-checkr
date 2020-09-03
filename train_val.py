@@ -5,13 +5,12 @@ from keras.callbacks import EarlyStopping,ReduceLROnPlateau,ModelCheckpoint
 
 np.random.seed(1234)
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-
-from utils import CharacterTable, transform
+from utils import preprocess_in_chuncks,transform_in_chunks
+from utils import CharacterTable
 from utils import batch, datagen, decode_sequences
-from utils import read_text, tokenize
 from model import seq2seq
 
-error_rate = 0.5
+
 hidden_size = 512
 nb_epochs = 100
 train_batch_size = 128
@@ -26,61 +25,48 @@ sample_mode = 'argmax'
 # https://arxiv.org/abs/1409.3215
 reverse = True
 
-data_path = './spell-checkr/data'
-train_books = ['nietzsche.txt', 'pride_and_prejudice.txt',
-               'shakespeare.txt', 'war_and_peace.txt']
-val_books = ['wonderland.txt']
+data_path = './drive/My Drive/Data/'
+train_books = ['train.txt']
+val_books = ['val.txt']
 
 
 if __name__ == '__main__':
     # Prepare training data.
-    text  = read_text(data_path, train_books)
-    vocab = tokenize(text)
-    vocab = list(filter(None, vocab))
-    vocab,corr_vocab = utils.add_segmentation(vocab,0.15,3)
-    vocab,corr_vocab = set(vocab),set(corr_vocab)
-    
-    
     # `maxlen` is the length of the longest word in the vocabulary
     # plus two SOS and EOS characters.
-    maxlen = max([len(token) for token in vocab]) + 2
-    train_encoder, train_decoder, train_target = transform(
-        vocab,corr_vocab, maxlen, error_rate=error_rate, shuffle=False)
-    print(train_encoder[:10])
-    print(train_decoder[:10])
-    print(train_target[:10])
+    tokenized_file,corr_tokenized_file,maxlen,train_count = preprocess_in_chuncks(data_path,train_books,500,0,0.15)
+    
+    
+    
+    
+    train_encoder, train_decoder, train_target,input_chars,target_chars = transform_in_chunks(tokenized_file,
+                                                                                              corr_tokenized_file,500,maxlen)
+        
+    
 
-    input_chars = set(' '.join(train_encoder))
-    target_chars = set(' '.join(train_decoder))
+    
     nb_input_chars = len(input_chars)
     nb_target_chars = len(target_chars)
     
-    print('Size of training vocabulary =', len(vocab))
+    print('Size of training vocabulary =', train_count)
     print('Number of unique input characters:', nb_input_chars)
     print('Number of unique target characters:', nb_target_chars)
     print('Max sequence length in the training set:', maxlen)
 
     # Prepare validation data.
-    text = read_text(data_path, val_books)
-    val_tokens = tokenize(text)
-    val_tokens = list(filter(None, val_tokens))
-    val_tokens,corr_val_tokens = utils.add_segmentation(val_tokens,0.3,3)
-
-    val_maxlen = max([len(token) for token in val_tokens]) + 2
-    val_encoder, val_decoder, val_target = transform(
-        val_tokens,corr_val_tokens, maxlen, error_rate=error_rate, shuffle=False)
-    print(val_encoder[:10])
-    print(val_decoder[:10])
-    print(val_target[:10])
-    print('Number of non-unique validation tokens =', len(val_tokens))
-    print('Max sequence length in the validation set:', val_maxlen)
+    tokenized_file,corr_tokenized_file,maxlen,val_count = preprocess_in_chuncks(data_path,val_books,500,1,0.15)
+    
+    
+    
+    
+    val_encoder, val_decoder, val_target,_,__ = transform_in_chunks(tokenized_file,corr_tokenized_file,500,maxlen,1)
 
     # Define training and evaluation configuration.
     input_ctable  = CharacterTable(input_chars)
     target_ctable = CharacterTable(target_chars)
 
-    train_steps = len(vocab) // train_batch_size
-    val_steps = len(val_tokens) // val_batch_size
+    train_steps = train_count // train_batch_size
+    val_steps = val_count // val_batch_size
 
     # Compile the model.
     model, encoder_model, decoder_model = seq2seq(
@@ -92,8 +78,8 @@ if __name__ == '__main__':
     for epoch in range(nb_epochs):
         print('Main Epoch {:d}/{:d}'.format(epoch + 1, nb_epochs))
     
-        train_encoder, train_decoder, train_target = transform(
-            vocab,corr_vocab, maxlen, error_rate=error_rate, shuffle=True)
+        train_encoder, train_decoder, train_target,_,__ = transform_in_chunks(
+            tokenized_file,corr_tokenized_file,1000, maxlen, shuffle=True)
         
         train_encoder_batch = batch(train_encoder, maxlen, input_ctable,
                                     train_batch_size, reverse)
