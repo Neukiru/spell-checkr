@@ -1,7 +1,8 @@
 import re
 import io
 import os
-import unidecode
+
+from itertools import islice
 import numpy as np
 
 from keras.models import Model, load_model
@@ -199,14 +200,15 @@ def transform(tokens,corrupted_tokens, maxlen, error_rate=0.3, shuffle=True):
     return encoder_tokens, decoder_tokens, target_tokens
 
 
-def batch(tokens, maxlen, ctable, batch_size=128, reverse=False):
+def batch(token_file, maxlen, ctable, batch_size=128, reverse=False):
     """Split data into chunks of `batch_size` examples."""
+    tokens = open(token_file,'r')
     def generate(tokens, reverse):
         while(True): # This flag yields an infinite generator.
             for token in tokens:
                 if reverse:
-                    token = token[::-1]
-                yield token
+                    token = token[:-1:-1]
+                yield token[:-1]
     
     token_iterator = generate(tokens, reverse)
     data_batch = np.zeros((batch_size, maxlen, ctable.size),
@@ -216,6 +218,95 @@ def batch(tokens, maxlen, ctable, batch_size=128, reverse=False):
             token = next(token_iterator)
             data_batch[i] = ctable.encode(token, maxlen)
         yield data_batch
+
+def preprocess_in_chuncks(data_path,list_of_books,num_lines,train_val_flag = 0,segmentation_rate = 0.5, n_grammes = 3):
+  if train_val_flag == 0:
+        train_val_flag = 'train'
+  else:
+        train_val_flag = 'val'
+  data_count = 0
+  maxlen = 0
+  for book in list_of_books:
+        file_path = os.path.join(data_path, book)    
+        with open(file_path, mode = 'r', encoding= 'utf-8') as f:
+            
+            tokenized_file = open('{}_tokenized_file.txt'.format(train_val_flag),'a')
+            corr_tokenized_file = open('{}_corr_tokenized_file.txt'.format(train_val_flag),'a')
+            while True:
+              next_n_lines = "".join(line for line in list(islice(f, num_lines)))
+              if not next_n_lines:
+                  break
+              tokenized = tokenize(next_n_lines)
+              tokenized = list(filter(None, tokenized))
+              tokenized,corr_tokenized = add_segmentation(tokenized,segmentation_rate,n_grammes)
+              tmp_len = max([len(token) for token in tokenized]) + 2
+              if maxlen < tmp_len:
+                maxlen = tmp_len
+              tokenized_map = map(lambda x:x+'\n',set(tokenized))
+              corr_tokenized_map = map(lambda y:y+'\n',set(corr_tokenized))
+              data_count += len(set(tokenized))
+              corr_tokenized_file.writelines(list(corr_tokenized_map))
+              tokenized_file.writelines(list(tokenized_map))
+                    
+              
+                        
+            
+  return '{}_tokenized_file.txt'.format(train_val_flag),'{}_corr_tokenized_file.txt'.format(train_val_flag), maxlen, data_count        
+
+def transform_in_chunks(tokenized_file,corr_tokenized_file,chunk_size,maxlen,train_val_flag = 0,error_rate = 0.5,shuffle = False):
+    if train_val_flag == 0:
+        train_val_flag = 'train'
+    else:
+        train_val_flag = 'val'
+    tokenized_stream = open(tokenized_file,'r')
+    corr_tokenized_stream = open(corr_tokenized_file,'r')
+    encoder_file = os.path.exists(os.path.join(os.getcwd(), '{}_encoder.txt'.format(train_val_flag)))
+    if encoder_file:
+        open('{}_encoder.txt'.format(train_val_flag), 'w').close()
+        open('{}_decoder.txt'.format(train_val_flag), 'w').close()
+        open('{}_target.txt'.format(train_val_flag), 'w').close()
+        encoder_tokens = open('{}_encoder.txt'.format(train_val_flag),'a')
+        decoder_tokens = open('{}_decoder.txt'.format(train_val_flag),'a')
+        target_tokens = open('{}_target.txt'.format(train_val_flag),'a')
+    else:
+        encoder_tokens = open('{}_encoder.txt'.format(train_val_flag),'a+')
+        decoder_tokens = open('{}_decoder.txt'.format(train_val_flag),'a+')
+        target_tokens = open('{}_target.txt'.format(train_val_flag),'a+')
+    input_chars = set()
+    target_chars = set()
+    eof = False
+    while not eof:
+      tokens = []
+      corrupted_tokens = []
+      counter = 0
+      while counter < chunk_size:
+        counter += 1
+        next_token = tokenized_stream.readline()[:-1]
+        next_corr_token = corr_tokenized_stream.readline()[:-1]
+        if not next_token:
+          eof = True
+          break
+        tokens.append(next_token)
+        corrupted_tokens.append(next_corr_token)
+      if shuffle:
+          print('Shuffling data')
+          shuffle_tokens = list(zip(tokens, corrupted_tokens))
+          np.random.shuffle(shuffle_tokens)
+          tokens,corrupted_tokens = [list(pack) for pack in zip(*shuffle_tokens)]
+      for corrupted_token,token in zip(corrupted_tokens,tokens):
+          encoder = add_speling_erors( corrupted_token, error_rate)
+          encoder += EOS * (maxlen - len(encoder)) + '\n' # Padded to maxlen.
+          encoder_tokens.writelines(encoder)
+          input_chars = input_chars.union(encoder[:-1])
+          decoder = SOS + token
+          decoder += EOS * (maxlen - len(decoder))+'\n'
+          decoder_tokens.writelines(decoder)
+          target_chars = target_chars.union(decoder[:-1])
+          target = decoder[1:]
+          target += EOS * (maxlen - len(target))
+          target_tokens.writelines(target)  
+          assert(len(encoder[:-1]) == len(decoder[:-1]) == len(target))
+    return '{}_encoder.txt'.format(train_val_flag),'{}_decoder.txt'.format(train_val_flag),'{}_target.txt'.format(train_val_flag),input_chars,target_chars
 
 
 def datagen(encoder_iter, decoder_iter, target_iter):
