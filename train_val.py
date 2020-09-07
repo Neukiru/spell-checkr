@@ -4,17 +4,17 @@ from keras.callbacks import EarlyStopping,ReduceLROnPlateau,ModelCheckpoint
 
 
 np.random.seed(1234)
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+#os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 from utils import preprocess_in_chuncks,transform_in_chunks
 from utils import CharacterTable
-from utils import batch, datagen, decode_sequences
+from utils import batch_from_file, datagen, decode_sequences
 from model import seq2seq
 
 
 hidden_size = 512
 nb_epochs = 100
-train_batch_size = 128
-val_batch_size = 256
+train_batch_size = 512
+val_batch_size = 128
 sample_mode = 'argmax'
 # Input sequences may optionally be reversed,
 # shown to increase performance by introducing
@@ -34,34 +34,37 @@ if __name__ == '__main__':
     # Prepare training data.
     # `maxlen` is the length of the longest word in the vocabulary
     # plus two SOS and EOS characters.
-    tokenized_file,corr_tokenized_file,maxlen,train_count = preprocess_in_chuncks(data_path,train_books,500,0,0.15)
+    tokenized_file,corr_tokenized_file,maxlen,train_count = preprocess_in_chuncks(data_path,train_books,500,0,0.15,n_grammes = 2)
     
     
     
     
-    train_encoder, train_decoder, train_target,input_chars,target_chars = transform_in_chunks(tokenized_file,
-                                                                                              corr_tokenized_file,500,maxlen)
+    train_encoder, train_decoder, train_target = transform_in_chunks(tokenized_file,corr_tokenized_file,500,maxlen)
         
     
 
     
-    nb_input_chars = len(input_chars)
-    nb_target_chars = len(target_chars)
+    
     
     print('Size of training vocabulary =', train_count)
-    print('Number of unique input characters:', nb_input_chars)
-    print('Number of unique target characters:', nb_target_chars)
     print('Max sequence length in the training set:', maxlen)
 
     # Prepare validation data.
-    tokenized_file,corr_tokenized_file,maxlen,val_count = preprocess_in_chuncks(data_path,val_books,500,1,0.15)
+    tokenized_file,corr_tokenized_file,maxlen,val_count = preprocess_in_chuncks(data_path,val_books,500,1,0.15,n_grammes = 2)
     
     
+    print('val count {}'.format(val_count))
     
-    
-    val_encoder, val_decoder, val_target,_,__ = transform_in_chunks(tokenized_file,corr_tokenized_file,500,maxlen,1)
+    val_encoder, val_decoder, val_target = transform_in_chunks(tokenized_file,corr_tokenized_file,500,maxlen,1)
 
+    val_encoder_stream =  open(val_encoder,'r')
+    val_decoder_stream =  open(val_decoder,'r')
+    val_target_stream =  open(val_target,'r')
     # Define training and evaluation configuration.
+    input_chars = set('აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწჭხჯჰ-* ')
+    target_chars = set('აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწჭხჯჰ-* \t')
+    nb_input_chars = len(input_chars)
+    nb_target_chars = len(target_chars)
     input_ctable  = CharacterTable(input_chars)
     target_ctable = CharacterTable(target_chars)
 
@@ -74,25 +77,30 @@ if __name__ == '__main__':
     print(model.summary())
     
 
+
     # Train and evaluate.
     for epoch in range(nb_epochs):
         print('Main Epoch {:d}/{:d}'.format(epoch + 1, nb_epochs))
     
-        train_encoder, train_decoder, train_target,_,__ = transform_in_chunks(
-            tokenized_file,corr_tokenized_file,1000, maxlen, shuffle=True)
+        train_encoder, train_decoder, train_target = transform_in_chunks(
+            tokenized_file,corr_tokenized_file,500, maxlen, shuffle=True)
         
-        train_encoder_batch = batch(train_encoder, maxlen, input_ctable,
+
+        train_encoder_stream =  open(train_encoder,'r')
+        train_decoder_stream =  open(train_decoder,'r')
+        train_target_stream =  open(train_target,'r')        
+        train_encoder_batch = batch_from_file(train_encoder_stream, maxlen, input_ctable,
                                     train_batch_size, reverse)
-        train_decoder_batch = batch(train_decoder, maxlen, target_ctable,
+        train_decoder_batch = batch_from_file(train_decoder_stream, maxlen, target_ctable,
                                     train_batch_size)
-        train_target_batch  = batch(train_target, maxlen, target_ctable,
+        train_target_batch  = batch_from_file(train_target_stream, maxlen, target_ctable,
                                     train_batch_size)    
 
-        val_encoder_batch = batch(val_encoder, maxlen, input_ctable,
+        val_encoder_batch = batch_from_file(val_encoder_stream, maxlen, input_ctable,
                                   val_batch_size, reverse)
-        val_decoder_batch = batch(val_decoder, maxlen, target_ctable,
+        val_decoder_batch = batch_from_file(val_decoder_stream, maxlen, target_ctable,
                                   val_batch_size)
-        val_target_batch  = batch(val_target, maxlen, target_ctable,
+        val_target_batch  = batch_from_file(val_target_stream, maxlen, target_ctable,
                                   val_batch_size)
     
         train_loader = datagen(train_encoder_batch,
@@ -100,7 +108,7 @@ if __name__ == '__main__':
         val_loader = datagen(val_encoder_batch,
                              val_decoder_batch, val_target_batch)
     
-     
+        
         my_callbacks = [
         EarlyStopping(patience=4, verbose=1),
         ReduceLROnPlateau(factor=0.1, patience=3, min_lr=0.00001, verbose=1),
@@ -117,14 +125,19 @@ if __name__ == '__main__':
         
         # On epoch end - decode a batch of misspelled tokens from the
         # validation set to visualize speller performance.
-        nb_tokens = 5
+        nb_tokens = 2
+        
         input_tokens, target_tokens, decoded_tokens = decode_sequences(
-            val_encoder, val_target, input_ctable, target_ctable,
-            maxlen, reverse, encoder_model, decoder_model, nb_tokens,
-            sample_mode=sample_mode, random=True)
+             val_count,val_encoder_stream, val_target_stream, input_ctable, target_ctable,
+             maxlen, reverse, encoder_model, decoder_model, nb_tokens,
+             sample_mode=sample_mode, random=True)
+        
         
         print('-')
         print('Input tokens:  ', input_tokens)
         print('Decoded tokens:', decoded_tokens)
         print('Target tokens: ', target_tokens)
         print('-')
+        train_encoder_stream.close()
+        train_decoder_stream.close()
+        train_target_stream.close()

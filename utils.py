@@ -1,7 +1,7 @@
 import re
 import io
 import os
-
+import regex as re
 from itertools import islice
 import numpy as np
 
@@ -14,8 +14,9 @@ np.random.seed(1234)
 
 SOS = '\t' # start of sequence.
 EOS = '*' # end of sequence.
-CHARS = list('აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწჭხჯჰ ')
-whitelist = set('აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწხჰ ')
+
+CHARS = list('აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწხჰ- ')
+whitelist = set('აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწხჰ- ')
 
 
 class CharacterTable(object):
@@ -86,8 +87,11 @@ def read_text(data_path, list_of_books):
 
 
 def tokenize(text):
+    tokens = re.sub('[^\P{P}-]+', ' ', text)
+    tokens = re.sub('\s+',' ', tokens)
     tokens = [''.join(filter(whitelist.__contains__, token))
-              for token in re.split("[-\n ]", text)]
+              for token in re.split("[-\n ]", tokens)]      
+    
     return tokens
 
 def add_segmentation(tokens,error_rate,n_gramms = 2):
@@ -199,18 +203,53 @@ def transform(tokens,corrupted_tokens, maxlen, error_rate=0.3, shuffle=True):
         assert(len(encoder) == len(decoder) == len(target))
     return encoder_tokens, decoder_tokens, target_tokens
 
-
-def batch(token_file, maxlen, ctable, batch_size=128, reverse=False):
+def batch(tokens, maxlen, ctable, batch_size=128, reverse=False):
     """Split data into chunks of `batch_size` examples."""
-    tokens = open(token_file,'r')
     def generate(tokens, reverse):
         while(True): # This flag yields an infinite generator.
             for token in tokens:
                 if reverse:
-                    token = token[:-1:-1]
+                    token = token[:-1][::-1]
                 yield token[:-1]
     
     token_iterator = generate(tokens, reverse)
+    data_batch = np.zeros((batch_size, maxlen, ctable.size),
+                          dtype=np.float32)
+    while(True):
+        for i in range(batch_size):
+            token = next(token_iterator)
+            data_batch[i] = ctable.encode(token, maxlen)
+        yield data_batch
+
+def get_nth_line(file,n):
+  file.seek(0,0)
+  line_offset = []
+  offset = 0
+  for line in file:
+      line_offset.append(offset)
+      offset += len(line)
+  file.seek(0,0)
+
+  
+  file.read(line_offset[n])
+  string = file.readline()
+  return string[:-1]
+
+
+def batch_from_file(token_stream, maxlen, ctable, batch_size=128, reverse=False):
+    """Split data into chunks of `batch_size` examples."""
+    
+    def generate(token_stream, reverse):
+        while(True):
+            token_stream.seek(0,0) # This flag yields an infinite generator.
+            for token in token_stream:
+                if reverse:
+                    token = token[:-1][::-1]
+                else:
+                    token = token[:-1]
+                yield token
+    
+    token_iterator = generate(token_stream, reverse)
     data_batch = np.zeros((batch_size, maxlen, ctable.size),
                           dtype=np.float32)
     while(True):
@@ -242,15 +281,15 @@ def preprocess_in_chuncks(data_path,list_of_books,num_lines,train_val_flag = 0,s
               tmp_len = max([len(token) for token in tokenized]) + 2
               if maxlen < tmp_len:
                 maxlen = tmp_len
-              tokenized_map = map(lambda x:x+'\n',set(tokenized))
-              corr_tokenized_map = map(lambda y:y+'\n',set(corr_tokenized))
+              tokenized_map = map(lambda x:x+'\n',tokenized)
+              corr_tokenized_map = map(lambda y:y+'\n',corr_tokenized)
               data_count += len(set(tokenized))
               corr_tokenized_file.writelines(list(corr_tokenized_map))
               tokenized_file.writelines(list(tokenized_map))
                     
               
                         
-            
+  print('preprocessing complete',)        
   return '{}_tokenized_file.txt'.format(train_val_flag),'{}_corr_tokenized_file.txt'.format(train_val_flag), maxlen, data_count        
 
 def transform_in_chunks(tokenized_file,corr_tokenized_file,chunk_size,maxlen,train_val_flag = 0,error_rate = 0.5,shuffle = False):
@@ -272,8 +311,6 @@ def transform_in_chunks(tokenized_file,corr_tokenized_file,chunk_size,maxlen,tra
         encoder_tokens = open('{}_encoder.txt'.format(train_val_flag),'a+')
         decoder_tokens = open('{}_decoder.txt'.format(train_val_flag),'a+')
         target_tokens = open('{}_target.txt'.format(train_val_flag),'a+')
-    input_chars = set()
-    target_chars = set()
     eof = False
     while not eof:
       tokens = []
@@ -289,7 +326,7 @@ def transform_in_chunks(tokenized_file,corr_tokenized_file,chunk_size,maxlen,tra
         tokens.append(next_token)
         corrupted_tokens.append(next_corr_token)
       if shuffle:
-          print('Shuffling data')
+          
           shuffle_tokens = list(zip(tokens, corrupted_tokens))
           np.random.shuffle(shuffle_tokens)
           tokens,corrupted_tokens = [list(pack) for pack in zip(*shuffle_tokens)]
@@ -297,16 +334,14 @@ def transform_in_chunks(tokenized_file,corr_tokenized_file,chunk_size,maxlen,tra
           encoder = add_speling_erors( corrupted_token, error_rate)
           encoder += EOS * (maxlen - len(encoder)) + '\n' # Padded to maxlen.
           encoder_tokens.writelines(encoder)
-          input_chars = input_chars.union(encoder[:-1])
           decoder = SOS + token
           decoder += EOS * (maxlen - len(decoder))+'\n'
           decoder_tokens.writelines(decoder)
-          target_chars = target_chars.union(decoder[:-1])
           target = decoder[1:]
           target += EOS * (maxlen - len(target))
           target_tokens.writelines(target)  
           assert(len(encoder[:-1]) == len(decoder[:-1]) == len(target))
-    return '{}_encoder.txt'.format(train_val_flag),'{}_decoder.txt'.format(train_val_flag),'{}_target.txt'.format(train_val_flag),input_chars,target_chars
+    return '{}_encoder.txt'.format(train_val_flag),'{}_decoder.txt'.format(train_val_flag),'{}_target.txt'.format(train_val_flag)
 
 
 def datagen(encoder_iter, decoder_iter, target_iter):
@@ -318,20 +353,21 @@ def datagen(encoder_iter, decoder_iter, target_iter):
         yield ([encoder_input, decoder_input], target)
 
 
-def decode_sequences(inputs, targets, input_ctable, target_ctable,
+def decode_sequences(input_length,inputs, targets, input_ctable, target_ctable,
                      maxlen, reverse, encoder_model, decoder_model,
                      nb_examples, sample_mode='argmax', random=True):
     input_tokens = []
     target_tokens = []
     
     if random:
-        indices = np.random.randint(0, len(inputs), nb_examples)
+        indices = np.random.randint(0, input_length, nb_examples)
     else:
         indices = range(nb_examples)
         
     for index in indices:
-        input_tokens.append(inputs[index])
-        target_tokens.append(targets[index])
+        input_tokens.append(get_nth_line(inputs,index))
+        target_tokens.append(get_nth_line(targets,index))
+    
     input_sequences = batch(input_tokens, maxlen, input_ctable,
                             nb_examples, reverse)
     input_sequences = next(input_sequences)
